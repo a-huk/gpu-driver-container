@@ -604,22 +604,14 @@ init() {
         _find_vgpu_driver_version || exit 1
     fi
 
-    # Install the userspace components
-    sh NVIDIA-Linux-$DRIVER_ARCH-$DRIVER_VERSION.run -x && \
-        cd NVIDIA-Linux-$DRIVER_ARCH-$DRIVER_VERSION && \
-        ./nvidia-installer --silent \
-                    --no-kernel-module \
-                    --no-nouveau-check \
-                    --no-nvidia-modprobe \
-                    --no-rpms \
-                    --no-backup \
-                    --no-check-for-alternate-installs \
-                    --no-libglx-indirect \
-                    --no-install-libglvnd \
-                    --x-prefix=/tmp/null \
-                    --x-module-path=/tmp/null \
-                    --x-library-path=/tmp/null \
-                    --x-sysconfig-path=/tmp/null
+    # Install necessary driver userspace packages
+    apt-get install -y --no-install-recommends \
+        nvidia-utils-${DRIVER_BRANCH}-server \
+        nvidia-headless-no-dkms-${DRIVER_BRANCH}-server \
+        libnvidia-decode-${DRIVER_BRANCH}-server \
+        libnvidia-extra-${DRIVER_BRANCH}-server \
+        libnvidia-encode-${DRIVER_BRANCH}-server \
+        libnvidia-fbc1-${DRIVER_BRANCH}-server
 
     # Determine the kernel module type
     _resolve_kernel_type || exit 1

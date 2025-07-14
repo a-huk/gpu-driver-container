@@ -14,7 +14,6 @@ dep_install () {
             apt-utils \
             build-essential \
             ca-certificates \
-            curl \
             kmod \
             file \
             libelf-dev \
@@ -26,7 +25,6 @@ dep_install () {
             apt-get update && apt-get install -y \
             build-essential \
             ca-certificates \
-            curl \
             kmod \
             file \
             libelf-dev \
