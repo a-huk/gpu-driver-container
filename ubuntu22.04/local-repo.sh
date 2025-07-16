@@ -80,7 +80,7 @@ build_local_apt_repo () {
   pushd ${LOCAL_REPO_DIR}
   
   # Check if we have any packages
-  if [ ! -f *.deb ]; then
+  if ! ls *.deb 1> /dev/null 2>&1; then
     echo "ERROR: No .deb packages found in ${LOCAL_REPO_DIR}"
     echo "Contents of directory:"
     ls -la
@@ -93,14 +93,17 @@ build_local_apt_repo () {
   # Backup existing sources.list
   cp /etc/apt/sources.list /etc/apt/sources.list.backup
   
-  # Set up local repository
-  echo "deb [trusted=yes] file:${LOCAL_REPO_DIR} ./" > /etc/apt/sources.list
+  # Add local repository to sources.list (append, don't replace)
+  echo "deb [trusted=yes] file:${LOCAL_REPO_DIR} ./" >> /etc/apt/sources.list
   
   # Show what we're adding
   echo "Local repository contents:"
   ls -la
   echo "Packages.gz contents:"
   zcat Packages.gz | grep "^Package:" | head -20
+  
+  echo "Updated sources.list:"
+  cat /etc/apt/sources.list
   
   popd
   

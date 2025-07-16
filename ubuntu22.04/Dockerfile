@@ -90,38 +90,6 @@ RUN cd /usr/local/repos && \
 ADD local-repo.sh /tmp
 RUN chmod +x /tmp/local-repo.sh
 
-# Add debugging script to check what packages are available
-RUN cat > /tmp/check_nvidia_packages.sh << 'EOF'
-#!/bin/bash
-echo "=== Checking available NVIDIA packages ==="
-echo "DRIVER_BRANCH: $DRIVER_BRANCH"
-echo "DRIVER_VERSION: $DRIVER_VERSION"
-echo ""
-
-apt-get update > /dev/null 2>&1
-
-echo "Available NVIDIA packages matching driver branch $DRIVER_BRANCH:"
-apt-cache search "nvidia.*$DRIVER_BRANCH" | head -20
-
-echo ""
-echo "Available NVIDIA server packages:"
-apt-cache search "nvidia.*server" | head -20
-
-echo ""
-echo "Available NVIDIA utils packages:"
-apt-cache search "nvidia-utils" | head -10
-
-echo ""
-echo "Available fabricmanager packages:"
-apt-cache search "nvidia-fabricmanager" | head -10
-EOF
-
-RUN chmod +x /tmp/check_nvidia_packages.sh
-
-# Check what packages are available before attempting download
-RUN echo "=== PRE-DOWNLOAD PACKAGE CHECK ===" && \
-    /tmp/check_nvidia_packages.sh
-
 # Try to download driver packages and build local repo
 RUN echo "=== ATTEMPTING PACKAGE DOWNLOAD ===" && \
     (/tmp/local-repo.sh download_driver_package_deps || echo "Package download had issues, continuing...") && \
@@ -181,10 +149,16 @@ WORKDIR /drivers
 ARG PUBLIC_KEY=empty
 COPY ${PUBLIC_KEY} kernel/pubkey.x509
 
-# Install the gcc-12 package in Ubuntu 22.04 as Kernels with versions 5.19.x and 6.5.x need gcc 12.3.0 for compilation
-RUN echo "deb http://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/sources.list && \
-    echo "deb http://archive.ubuntu.com/ubuntu jammy-updates main universe" >> /etc/apt/sources.list && \
-    echo "deb http://archive.ubuntu.com/ubuntu jammy-security main universe" >> /etc/apt/sources.list && \
+# Install the gcc-12 package - PRESERVE LOCAL REPO CONFIGURATION
+RUN echo "=== INSTALLING GCC-12 WHILE PRESERVING LOCAL REPO ===" && \
+    cp /etc/apt/sources.list /etc/apt/sources.list.backup && \
+    echo "deb http://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/sources.list.new && \
+    echo "deb http://archive.ubuntu.com/ubuntu jammy-updates main universe" >> /etc/apt/sources.list.new && \
+    echo "deb http://archive.ubuntu.com/ubuntu jammy-security main universe" >> /etc/apt/sources.list.new && \
+    if [ -f /usr/local/repos/Packages.gz ]; then \
+        echo "deb [trusted=yes] file:/usr/local/repos ./" >> /etc/apt/sources.list.new; \
+    fi && \
+    mv /etc/apt/sources.list.new /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends gcc-12 g++-12 && \
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12 && \
@@ -212,6 +186,9 @@ echo "DRIVER_BRANCH: $DRIVER_BRANCH"
 echo "DRIVER_VERSION: $DRIVER_VERSION"
 echo "DRIVER_TYPE: $DRIVER_TYPE"
 echo ""
+echo "Current sources.list:"
+cat /etc/apt/sources.list
+echo ""
 echo "Downloaded .run file:"
 ls -la /usr/local/repos/*.run
 echo ""
@@ -219,9 +196,29 @@ echo "Local repository packages:"
 ls -la /usr/local/repos/*.deb 2>/dev/null || echo "No .deb packages found"
 echo ""
 echo "Available NVIDIA packages in apt:"
-apt list --installed | grep nvidia | head -10
+apt-get update > /dev/null 2>&1
+apt-cache search "nvidia.*570" | head -10
+echo ""
+echo "Available server packages specifically:"
+apt-cache search "nvidia.*570.*server" | head -10
 EOF
 
 RUN chmod +x /usr/local/bin/debug-nvidia-packages
+
+# Final verification that local repo is still configured
+RUN echo "=== FINAL VERIFICATION ===" && \
+    echo "Current sources.list content:" && \
+    cat /etc/apt/sources.list && \
+    echo "" && \
+    echo "Checking if local repo packages are available:" && \
+    if [ -f /usr/local/repos/Packages.gz ]; then \
+        apt-get update > /dev/null 2>&1; \
+        echo "nvidia-utils-570-server availability:" && \
+        apt-cache search "^nvidia-utils-570-server$" || echo "Not found"; \
+        echo "nvidia-headless-no-dkms-570-server availability:" && \
+        apt-cache search "^nvidia-headless-no-dkms-570-server$" || echo "Not found"; \
+    else \
+        echo "Local repository not found"; \
+    fi
 
 ENTRYPOINT ["nvidia-driver", "init"]
