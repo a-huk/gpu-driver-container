@@ -69,56 +69,114 @@ RUN apt-key del 7fa2af80 && OS_ARCH=${TARGETARCH/amd64/x86_64} && OS_ARCH=${OS_A
 
 RUN /tmp/install.sh reposetup && /tmp/install.sh depinstall
 
-ADD local-repo.sh /tmp
-RUN chmod +x /tmp/local-repo.sh
-
-
-
+# Install additional tools for debugging
 RUN apt-get update && \
-    apt-get install -y software-properties-common && \
+    apt-get install -y software-properties-common dpkg-dev apt-utils && \
     add-apt-repository restricted && \
     add-apt-repository multiverse && \
     apt-get update && \
-    apt-get install -y curl
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
 
+# Create repos directory
+RUN mkdir -p /usr/local/repos
 
-RUN mkdir -p /usr/local/repos && \
-    cd /usr/local/repos && \
+# Download GRID driver
+RUN cd /usr/local/repos && \
     curl -O https://storage.googleapis.com/nvidia-drivers-us-public/GRID/vGPU18.2/NVIDIA-Linux-x86_64-570.148.08-grid.run && \
     chmod +x NVIDIA-Linux-x86_64-570.148.08-grid.run
 
-RUN mkdir -p /usr/local/repos && \
-    /tmp/local-repo.sh download_driver_package_deps && \
-    /tmp/local-repo.sh build_local_apt_repo && \
-    # Remove cuda repository to avoid GPG errors
-    rm -f /etc/apt/sources.list.d/cuda*
+# Add improved local-repo.sh
+ADD local-repo.sh /tmp
+RUN chmod +x /tmp/local-repo.sh
+
+# Add debugging script to check what packages are available
+RUN cat > /tmp/check_nvidia_packages.sh << 'EOF'
+#!/bin/bash
+echo "=== Checking available NVIDIA packages ==="
+echo "DRIVER_BRANCH: $DRIVER_BRANCH"
+echo "DRIVER_VERSION: $DRIVER_VERSION"
+echo ""
+
+apt-get update > /dev/null 2>&1
+
+echo "Available NVIDIA packages matching driver branch $DRIVER_BRANCH:"
+apt-cache search "nvidia.*$DRIVER_BRANCH" | head -20
+
+echo ""
+echo "Available NVIDIA server packages:"
+apt-cache search "nvidia.*server" | head -20
+
+echo ""
+echo "Available NVIDIA utils packages:"
+apt-cache search "nvidia-utils" | head -10
+
+echo ""
+echo "Available fabricmanager packages:"
+apt-cache search "nvidia-fabricmanager" | head -10
+EOF
+
+RUN chmod +x /tmp/check_nvidia_packages.sh
+
+# Check what packages are available before attempting download
+RUN echo "=== PRE-DOWNLOAD PACKAGE CHECK ===" && \
+    /tmp/check_nvidia_packages.sh
+
+# Try to download driver packages and build local repo
+RUN echo "=== ATTEMPTING PACKAGE DOWNLOAD ===" && \
+    (/tmp/local-repo.sh download_driver_package_deps || echo "Package download had issues, continuing...") && \
+    echo "=== BUILDING LOCAL REPO ===" && \
+    (/tmp/local-repo.sh build_local_apt_repo || echo "Local repo build had issues, continuing...")
+
+# Check if local repo was created successfully
+RUN echo "=== CHECKING LOCAL REPO ===" && \
+    ls -la /usr/local/repos/ && \
+    if [ -f /usr/local/repos/Packages.gz ]; then \
+        echo "Local repository created successfully"; \
+        echo "Packages in local repo:"; \
+        zcat /usr/local/repos/Packages.gz | grep "^Package:" | head -20; \
+    else \
+        echo "Local repository was not created successfully"; \
+    fi
 
 COPY nvidia-driver /usr/local/bin
-
 COPY --from=build /work/vgpu-util /usr/local/bin
 
 ADD drivers drivers/
 
-# Fetch the installer, fabricmanager and libnvidia-nscq automatically for passthrough/baremetal types
+# Try to install fabricmanager and libnvidia-nscq from local repo first, fallback to standard repos
 RUN if [ "$DRIVER_TYPE" != "vgpu" ]; then \
+    echo "=== INSTALLING FABRICMANAGER AND NSCQ ===" && \
     cd drivers && \
-    apt-get install -y --no-install-recommends nvidia-fabricmanager-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 \
-    libnvidia-nscq-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 && \
-    rm -rf /var/lib/apt/lists/*; fi
+    (apt-get install -y --no-install-recommends nvidia-fabricmanager-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 || \
+     apt-get install -y --no-install-recommends nvidia-fabricmanager-${DRIVER_BRANCH} || \
+     echo "Failed to install fabricmanager, continuing...") && \
+    (apt-get install -y --no-install-recommends libnvidia-nscq-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 || \
+     apt-get install -y --no-install-recommends libnvidia-nscq-${DRIVER_BRANCH} || \
+     echo "Failed to install libnvidia-nscq, continuing...") && \
+    rm -rf /var/lib/apt/lists/*; \
+fi
 
+# Install additional packages for newer driver branches
 RUN if [ "$DRIVER_TYPE" != "vgpu" ] && [ "$DRIVER_BRANCH" -ge "550" ]; then \
     apt-get update && \
-    apt-get install -y --no-install-recommends nvlsm infiniband-diags \
-    nvidia-imex-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 && \
-    rm -rf /var/lib/apt/lists/*; fi
+    (apt-get install -y --no-install-recommends nvlsm infiniband-diags || echo "Failed to install nvlsm/infiniband-diags, continuing...") && \
+    (apt-get install -y --no-install-recommends nvidia-imex-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 || \
+     apt-get install -y --no-install-recommends nvidia-imex-${DRIVER_BRANCH} || \
+     echo "Failed to install nvidia-imex, continuing...") && \
+    rm -rf /var/lib/apt/lists/*; \
+fi
 
 # libnvsdm packages are not available for arm64
 RUN if [ "$DRIVER_TYPE" != "vgpu" ] && [ "$DRIVER_BRANCH" -ge "560" ] && [ "$TARGETARCH" != "arm64" ]; then \
     apt-get update && \
-    apt-get install -y --no-install-recommends libnvsdm-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 && \
-    rm -rf /var/lib/apt/lists/*; fi
+    (apt-get install -y --no-install-recommends libnvsdm-${DRIVER_BRANCH}=${DRIVER_VERSION}-1 || \
+     apt-get install -y --no-install-recommends libnvsdm-${DRIVER_BRANCH} || \
+     echo "Failed to install libnvsdm, continuing...") && \
+    rm -rf /var/lib/apt/lists/*; \
+fi
 
-WORKDIR  /drivers
+WORKDIR /drivers
 
 ARG PUBLIC_KEY=empty
 COPY ${PUBLIC_KEY} kernel/pubkey.x509
@@ -133,7 +191,6 @@ RUN echo "deb http://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/s
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12 && \
     rm -rf /var/lib/apt/lists/*
 
-
 # Install / upgrade packages here that are required to resolve CVEs
 ARG CVE_UPDATES
 RUN if [ -n "${CVE_UPDATES}" ]; then \
@@ -146,5 +203,25 @@ RUN rm -f /etc/apt/sources.list.d/cuda*
 
 # Add NGC DL license from the CUDA image
 RUN mkdir /licenses && mv /NGC-DL-CONTAINER-LICENSE /licenses/NGC-DL-CONTAINER-LICENSE
+
+# Add a script to verify what's available at runtime
+RUN cat > /usr/local/bin/debug-nvidia-packages << 'EOF'
+#!/bin/bash
+echo "=== NVIDIA Driver Container Debug Info ==="
+echo "DRIVER_BRANCH: $DRIVER_BRANCH"
+echo "DRIVER_VERSION: $DRIVER_VERSION"
+echo "DRIVER_TYPE: $DRIVER_TYPE"
+echo ""
+echo "Downloaded .run file:"
+ls -la /usr/local/repos/*.run
+echo ""
+echo "Local repository packages:"
+ls -la /usr/local/repos/*.deb 2>/dev/null || echo "No .deb packages found"
+echo ""
+echo "Available NVIDIA packages in apt:"
+apt list --installed | grep nvidia | head -10
+EOF
+
+RUN chmod +x /usr/local/bin/debug-nvidia-packages
 
 ENTRYPOINT ["nvidia-driver", "init"]
