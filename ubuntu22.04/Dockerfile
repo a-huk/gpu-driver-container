@@ -81,10 +81,23 @@ RUN apt-get update && \
 # Create repos directory
 RUN mkdir -p /usr/local/repos
 
-# Download GRID driver
+# Download GRID driver and extract nvidia-installer
 RUN cd /usr/local/repos && \
     curl -O https://storage.googleapis.com/nvidia-drivers-us-public/GRID/vGPU18.2/NVIDIA-Linux-x86_64-570.148.08-grid.run && \
-    chmod +x NVIDIA-Linux-x86_64-570.148.08-grid.run
+    chmod +x NVIDIA-Linux-x86_64-570.148.08-grid.run && \
+    echo "=== Extracting nvidia-installer from .run file ===" && \
+    ./NVIDIA-Linux-x86_64-570.148.08-grid.run --extract-only && \
+    echo "=== Extracted contents ===" && \
+    ls -la && \
+    echo "=== Making nvidia-installer available globally ===" && \
+    if [ -f NVIDIA-Linux-x86_64-570.148.08-grid/nvidia-installer ]; then \
+        cp NVIDIA-Linux-x86_64-570.148.08-grid/nvidia-installer /usr/local/bin/; \
+        chmod +x /usr/local/bin/nvidia-installer; \
+        echo "nvidia-installer copied to /usr/local/bin/"; \
+    else \
+        echo "nvidia-installer not found in expected location"; \
+        find . -name "nvidia-installer" -type f; \
+    fi
 
 # Add improved local-repo.sh
 ADD local-repo.sh /tmp
