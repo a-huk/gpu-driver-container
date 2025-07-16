@@ -39,7 +39,7 @@ SHELL ["/bin/bash", "-c"]
 ARG BASE_URL=https://us.download.nvidia.com/tesla
 ARG TARGETARCH
 ENV TARGETARCH=$TARGETARCH
-ARG DRIVER_VERSION
+ARG DRIVER_VERSION=570.133.20
 ENV DRIVER_VERSION=$DRIVER_VERSION
 ARG KERNEL_VERSION
 ENV KERNEL_VERSION=$KERNEL_VERSION
@@ -60,6 +60,8 @@ ENV NVIDIA_VISIBLE_DEVICES=void
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
 RUN echo "TARGETARCH=$TARGETARCH"
+RUN echo "DRIVER_VERSION=$DRIVER_VERSION"
+RUN echo "DRIVER_BRANCH=$DRIVER_BRANCH"
 
 ADD install.sh /tmp
 
@@ -81,22 +83,50 @@ RUN apt-get update && \
 # Create repos directory
 RUN mkdir -p /usr/local/repos
 
-# Download GRID driver and extract nvidia-installer
+# Download and extract NVIDIA driver - using the version specified in build args
 RUN cd /usr/local/repos && \
-    curl -O https://storage.googleapis.com/nvidia-drivers-us-public/GRID/vGPU18.2/NVIDIA-Linux-x86_64-570.148.08-grid.run && \
-    chmod +x NVIDIA-Linux-x86_64-570.148.08-grid.run && \
+    echo "=== Downloading NVIDIA driver version: $DRIVER_VERSION ===" && \
+    curl -O https://storage.googleapis.com/nvidia-drivers-us-public/GRID/vGPU18.1/NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid.run && \
+    chmod +x NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid.run && \
     echo "=== Extracting nvidia-installer from .run file ===" && \
-    ./NVIDIA-Linux-x86_64-570.148.08-grid.run --extract-only && \
+    ./NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid.run --extract-only && \
     echo "=== Extracted contents ===" && \
-    ls -la && \
+    ls -la NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid/ && \
+    echo "=== Looking for .manifest file ===" && \
+    find NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid/ -name "*manifest*" -type f && \
     echo "=== Making nvidia-installer available globally ===" && \
-    if [ -f NVIDIA-Linux-x86_64-570.148.08-grid/nvidia-installer ]; then \
-        cp NVIDIA-Linux-x86_64-570.148.08-grid/nvidia-installer /usr/local/bin/; \
+    if [ -f NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid/nvidia-installer ]; then \
+        cp NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid/nvidia-installer /usr/local/bin/; \
         chmod +x /usr/local/bin/nvidia-installer; \
         echo "nvidia-installer copied to /usr/local/bin/"; \
     else \
         echo "nvidia-installer not found in expected location"; \
         find . -name "nvidia-installer" -type f; \
+    fi && \
+    echo "=== Copying driver files to /drivers for nvidia-driver script ===" && \
+    mkdir -p /drivers && \
+    cp -r NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid/* /drivers/ && \
+    echo "=== Copying .run file to /drivers ===" && \
+    cp NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid.run /drivers/ && \
+    echo "=== Ensuring .manifest file exists ===" && \
+    if [ ! -f /drivers/.manifest ]; then \
+        echo "Creating .manifest file since it doesn't exist"; \
+        cat > /drivers/.manifest << 'MANIFEST_EOF'
+# NVIDIA Driver Manifest for offline installation
+kernel/
+kernel-open/
+LICENSE
+MANIFEST_EOF
+    fi && \
+    echo "=== Contents of /drivers ===" && \
+    ls -la /drivers/ && \
+    echo "=== Verifying .manifest file ===" && \
+    if [ -f /drivers/.manifest ]; then \
+        echo ".manifest file confirmed in /drivers:"; \
+        cat /drivers/.manifest; \
+    else \
+        echo "ERROR: .manifest file still not found!"; \
+        exit 1; \
     fi
 
 # Add improved local-repo.sh
@@ -214,6 +244,12 @@ apt-cache search "nvidia.*570" | head -10
 echo ""
 echo "Available server packages specifically:"
 apt-cache search "nvidia.*570.*server" | head -10
+echo ""
+echo "Files in /drivers:"
+ls -la /drivers/
+echo ""
+echo "Contents of .manifest file:"
+cat /drivers/.manifest 2>/dev/null || echo ".manifest file not found"
 EOF
 
 RUN chmod +x /usr/local/bin/debug-nvidia-packages
@@ -232,6 +268,18 @@ RUN echo "=== FINAL VERIFICATION ===" && \
         apt-cache search "^nvidia-headless-no-dkms-570-server$" || echo "Not found"; \
     else \
         echo "Local repository not found"; \
+    fi && \
+    echo "" && \
+    echo "Final verification of /drivers contents:" && \
+    ls -la /drivers/ && \
+    echo "" && \
+    echo "Final verification of .manifest file:" && \
+    if [ -f /drivers/.manifest ]; then \
+        echo ".manifest file exists and contains:"; \
+        cat /drivers/.manifest; \
+    else \
+        echo "ERROR: .manifest file missing!"; \
+        exit 1; \
     fi
 
 ENTRYPOINT ["nvidia-driver", "init"]
