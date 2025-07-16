@@ -107,25 +107,25 @@ RUN cd /usr/local/repos && \
     mkdir -p /drivers && \
     cp -r NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid/* /drivers/ && \
     echo "=== Copying .run file to /drivers ===" && \
-    cp NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid.run /drivers/ && \
-    echo "=== Ensuring .manifest file exists ===" && \
+    cp NVIDIA-Linux-x86_64-${DRIVER_VERSION}-grid.run /drivers/
+
+# Create .manifest file if it doesn't exist
+RUN echo "=== Ensuring .manifest file exists ===" && \
     if [ ! -f /drivers/.manifest ]; then \
-        echo "Creating .manifest file since it doesn't exist"; \
-        cat > /drivers/.manifest << 'MANIFEST_EOF'
-# NVIDIA Driver Manifest for offline installation
-kernel/
-kernel-open/
-LICENSE
-MANIFEST_EOF
+        echo "Creating .manifest file since it doesn't exist" && \
+        echo "# NVIDIA Driver Manifest for offline installation" > /drivers/.manifest && \
+        echo "kernel/" >> /drivers/.manifest && \
+        echo "kernel-open/" >> /drivers/.manifest && \
+        echo "LICENSE" >> /drivers/.manifest; \
     fi && \
     echo "=== Contents of /drivers ===" && \
     ls -la /drivers/ && \
     echo "=== Verifying .manifest file ===" && \
     if [ -f /drivers/.manifest ]; then \
-        echo ".manifest file confirmed in /drivers:"; \
+        echo ".manifest file confirmed in /drivers:" && \
         cat /drivers/.manifest; \
     else \
-        echo "ERROR: .manifest file still not found!"; \
+        echo "ERROR: .manifest file still not found!" && \
         exit 1; \
     fi
 
@@ -222,37 +222,34 @@ RUN rm -f /etc/apt/sources.list.d/cuda*
 RUN mkdir /licenses && mv /NGC-DL-CONTAINER-LICENSE /licenses/NGC-DL-CONTAINER-LICENSE
 
 # Add a script to verify what's available at runtime
-RUN cat > /usr/local/bin/debug-nvidia-packages << 'EOF'
-#!/bin/bash
-echo "=== NVIDIA Driver Container Debug Info ==="
-echo "DRIVER_BRANCH: $DRIVER_BRANCH"
-echo "DRIVER_VERSION: $DRIVER_VERSION"
-echo "DRIVER_TYPE: $DRIVER_TYPE"
-echo ""
-echo "Current sources.list:"
-cat /etc/apt/sources.list
-echo ""
-echo "Downloaded .run file:"
-ls -la /usr/local/repos/*.run
-echo ""
-echo "Local repository packages:"
-ls -la /usr/local/repos/*.deb 2>/dev/null || echo "No .deb packages found"
-echo ""
-echo "Available NVIDIA packages in apt:"
-apt-get update > /dev/null 2>&1
-apt-cache search "nvidia.*570" | head -10
-echo ""
-echo "Available server packages specifically:"
-apt-cache search "nvidia.*570.*server" | head -10
-echo ""
-echo "Files in /drivers:"
-ls -la /drivers/
-echo ""
-echo "Contents of .manifest file:"
-cat /drivers/.manifest 2>/dev/null || echo ".manifest file not found"
-EOF
-
-RUN chmod +x /usr/local/bin/debug-nvidia-packages
+RUN echo '#!/bin/bash' > /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "=== NVIDIA Driver Container Debug Info ==="' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "DRIVER_BRANCH: $DRIVER_BRANCH"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "DRIVER_VERSION: $DRIVER_VERSION"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "DRIVER_TYPE: $DRIVER_TYPE"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Current sources.list:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'cat /etc/apt/sources.list' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Downloaded .run file:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'ls -la /usr/local/repos/*.run' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Local repository packages:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'ls -la /usr/local/repos/*.deb 2>/dev/null || echo "No .deb packages found"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Available NVIDIA packages in apt:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'apt-get update > /dev/null 2>&1' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'apt-cache search "nvidia.*570" | head -10' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Available server packages specifically:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'apt-cache search "nvidia.*570.*server" | head -10' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Files in /drivers:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'ls -la /drivers/' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo ""' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'echo "Contents of .manifest file:"' >> /usr/local/bin/debug-nvidia-packages && \
+    echo 'cat /drivers/.manifest 2>/dev/null || echo ".manifest file not found"' >> /usr/local/bin/debug-nvidia-packages && \
+    chmod +x /usr/local/bin/debug-nvidia-packages
 
 # Final verification that local repo is still configured
 RUN echo "=== FINAL VERIFICATION ===" && \
