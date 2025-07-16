@@ -14,7 +14,10 @@ download_driver_package_deps () {
   apt-get update
   pushd ${LOCAL_REPO_DIR}
 
-  download_apt_with_dep linux-objects-nvidia-${DRIVER_BRANCH}-server-${KERNEL_VERSION}
+  #download_apt_with_dep linux-objects-nvidia-${DRIVER_BRANCH}-server-${KERNEL_VERSION}
+  download_apt_with_dep nvidia-driver-${DRIVER_BRANCH}-server
+  download_apt_with_dep nvidia-dkms-${DRIVER_BRANCH}
+  download_apt_with_dep linux-headers-generic
   download_apt_with_dep linux-signatures-nvidia-${KERNEL_VERSION}
   download_apt_with_dep linux-modules-nvidia-${DRIVER_BRANCH}-server-${KERNEL_VERSION}
   download_apt_with_dep linux-modules-nvidia-${DRIVER_BRANCH}-server-open-${KERNEL_VERSION}

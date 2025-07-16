@@ -41,12 +41,14 @@ ARG TARGETARCH
 ENV TARGETARCH=$TARGETARCH
 ARG DRIVER_VERSION
 ENV DRIVER_VERSION=$DRIVER_VERSION
+ARG KERNEL_VERSION
+ENV KERNEL_VERSION=$KERNEL_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Arg to indicate if driver type is either of passthrough(baremetal) or vgpu
 ARG DRIVER_TYPE=passthrough
 ENV DRIVER_TYPE=$DRIVER_TYPE
-ARG DRIVER_BRANCH=535
+ARG DRIVER_BRANCH=570
 ENV DRIVER_BRANCH=$DRIVER_BRANCH
 ARG VGPU_LICENSE_SERVER_TYPE=NLS
 ENV VGPU_LICENSE_SERVER_TYPE=$VGPU_LICENSE_SERVER_TYPE
@@ -68,6 +70,22 @@ RUN apt-key del 7fa2af80 && OS_ARCH=${TARGETARCH/amd64/x86_64} && OS_ARCH=${OS_A
 RUN /tmp/install.sh reposetup && /tmp/install.sh depinstall
 
 ADD local-repo.sh /tmp
+RUN chmod +x /tmp/local-repo.sh
+
+
+
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository restricted && \
+    add-apt-repository multiverse && \
+    apt-get update && \
+    apt-get install -y curl
+
+
+RUN mkdir -p /usr/local/repos && \
+    cd /usr/local/repos && \
+    curl -O https://storage.googleapis.com/nvidia-drivers-us-public/GRID/vGPU18.2/NVIDIA-Linux-x86_64-570.148.08-grid.run && \
+    chmod +x NVIDIA-Linux-x86_64-570.148.08-grid.run
 
 RUN mkdir -p /usr/local/repos && \
     /tmp/local-repo.sh download_driver_package_deps && \
@@ -106,7 +124,10 @@ ARG PUBLIC_KEY=empty
 COPY ${PUBLIC_KEY} kernel/pubkey.x509
 
 # Install the gcc-12 package in Ubuntu 22.04 as Kernels with versions 5.19.x and 6.5.x need gcc 12.3.0 for compilation
-RUN apt-get update && \
+RUN echo "deb http://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu jammy-updates main universe" >> /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu jammy-security main universe" >> /etc/apt/sources.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends gcc-12 g++-12 && \
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12 && \
