@@ -279,4 +279,16 @@ RUN echo "=== FINAL VERIFICATION ===" && \
         exit 1; \
     fi
 
+# ===== CONFIGURE FOR OFFLINE RUNTIME OPERATION =====
+# This switches the container to offline-only mode after all build-time installations
+RUN echo "=== CONFIGURING FOR OFFLINE RUNTIME ===" && \
+    cp /etc/apt/sources.list /etc/apt/sources.list.build-backup && \
+    echo "# Offline runtime - local repository only" > /etc/apt/sources.list && \
+    echo "deb [trusted=yes] file:/usr/local/repos ./" >> /etc/apt/sources.list && \
+    apt-get update && \
+    echo "✓ Offline configuration complete"
+
+# Set environment variable to make nvidia-driver script skip online updates
+ENV PACKAGE_TAG=builtin
+
 ENTRYPOINT ["nvidia-driver", "init"]
